@@ -20,8 +20,10 @@ Lang['en'] = {
     ['not_enough_stock'] = "This gas station don't have enough stock to perform this action",
     ['refuel_paid'] = "Paid $%s for this refuel",
     ['returned_fuel'] = "You've returned %sL of fuel and received back $%s",
+    ['returned_charge'] = "You've returned %skWh of fuel and received back $%s",
     ['jerry_can_paid'] = "Paid $%s for this jerry can",
     ['too_far_away'] = "You are too far from the pump",
+    ['turn_off_engine'] = "Turn off the engine before refuelling",
     ['vehicle_refueled'] = "You refueled %sL in the vehicle",
     ['vehicle_recharged'] = "You recharged %skWh in the vehicle",
     ['vehicle_tank_full'] = "Vehicle tank is full",
@@ -34,5 +36,15 @@ Lang['en'] = {
         ['balance_jerry_can'] = "Gas can sold (%s Liters)",
         ['balance_fuel'] = "Fuel sold (%s Liters)",
         ['balance_electric'] = "Electric charge sold (%s kWh)",
-    }
+        ['refund_fuel'] = "Fuel refunded (%s Liters)",
+        ['refund_electric'] = "Electric charge refunded (%s kWh)",
+    },
+    ['fuel_types'] = {
+        ['type_title'] = "Fuel Type: %s",
+        ['electric'] = "Electric",
+        ['regular'] = "Regular",
+        ['plus'] = "Plus",
+        ['premium'] = "Premium",
+        ['diesel'] = "Diesel",
+    },
 }

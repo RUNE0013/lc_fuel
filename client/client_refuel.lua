@@ -5,6 +5,7 @@ local vehicleAttachedToNozzle = nil
 local remainingFuelToRefuel = 0
 local currentFuelTypePurchased = nil
 local distanceToCap, distanceToPump = math.maxinteger, math.maxinteger
+local litersDeductedEachTick = 0.5
 
 -----------------------------------------------------------------------------------------------------------------------------------------
 -- Refuelling
@@ -105,7 +106,8 @@ function returnNozzle()
         deleteRopeAndNozzleProp()
 
         if Config.ReturnNozzleRefund then
-            TriggerServerEvent('lc_fuel:returnNozzle', remainingFuelToRefuel)
+            local isElectric = Utils.Table.contains({"electricnormal", "electricfast"}, currentFuelTypePurchased)
+            TriggerServerEvent('lc_fuel:returnNozzle', remainingFuelToRefuel, isElectric)
         end
     end
 end
@@ -120,7 +122,7 @@ function executeRefuelAction(isFromJerryCan, closestVehicle, closestCapPos, clos
     -- Change the fuel tick if its electric charging
     if fuelTypePurchased == "electricfast" then
         isElectric = true
-        refuelTick = Config.Electric.chargeTypes.fast.time * 1000 / 2 -- Divide by 2 because each tick adds 0.5%.
+        refuelTick = Config.Electric.chargeTypes.fast.time * 1000 / 2 -- Divide by 2 because each tick adds 0.5kWh.
     end
     if fuelTypePurchased == "electricnormal" then
         isElectric = true
@@ -130,6 +132,12 @@ function executeRefuelAction(isFromJerryCan, closestVehicle, closestCapPos, clos
     local animationDuration = 1000 -- 1 sec
     if isFromJerryCan then
         animationDuration = -1 -- (infinite) Do not allow the player walk during refuel from jerry can
+    end
+
+    if IsVehicleEngineOn(closestVehicle) then
+        exports['lc_utils']:notify("error", Utils.translate("turn_off_engine"))
+        stopRefuelAction()
+        return
     end
 
     -- Do not allow user mix electric and petrol fuel/vehicles
@@ -157,54 +165,62 @@ function executeRefuelAction(isFromJerryCan, closestVehicle, closestCapPos, clos
                 refuelingThread = CreateThread(function()
                     local vehicleToRefuel = closestVehicle
                     local startingFuel = GetFuel(vehicleToRefuel) -- Get vehicle fuel level
-
-                    -- WIP
-                    -- local vehicleHash = GetEntityModel(vehicleToRefuel)
-                    local vehicleTankSize = 100 -- Config.TankSizesHash[vehicleHash] or Config.DefaultTankSize
-                    -- end WIP
+                    local vehicleTankSize = getVehicleTankSize(vehicleToRefuel)
 
                     local currentFuel = startingFuel
                     -- Loop keep happening while the player has not canceled, while the fuelNozzle exists and while the ped still has jerry can in hands
                     while isRefuelling and (DoesEntityExist(fuelNozzle) or (isFromJerryCan and GetSelectedPedWeapon(ped) == JERRY_CAN_HASH)) do
-                        currentFuel = GetFuel(vehicleToRefuel)
-                        local fuelToAdd = 0.5 -- Add 0.5% each tick
-                        if currentFuel + fuelToAdd > vehicleTankSize then
-                            -- Increase the vehicle fuel level
-                            fuelToAdd = vehicleTankSize - currentFuel
+                        -- Stop refuel if the vehicle engine is on
+                        if IsVehicleEngineOn(vehicleToRefuel) then
+                            exports['lc_utils']:notify("error", Utils.translate("turn_off_engine"))
+                            stopRefuelAction()
+                            break
                         end
-                        if remainingFuelToRefuel < fuelToAdd then
+                        currentFuel = GetFuel(vehicleToRefuel)
+                        local percentageOfFuelToAdd = calculateFuelToAddPercentage(vehicleTankSize) -- Add 0.5L each tick, but the % is proportional to the vehicle tank
+                        if currentFuel + percentageOfFuelToAdd > 100 then
+                            -- Increase the vehicle fuel level
+                            percentageOfFuelToAdd = 100 - currentFuel
+                        end
+                        if remainingFuelToRefuel < litersDeductedEachTick then
                             -- Break when the user has used all the fuel he paid for
                             break
                         end
-                        if fuelToAdd <= 0.1 then
+                        if percentageOfFuelToAdd <= 0.01 then
                             -- Break when the vehicle tank is full
                             exports['lc_utils']:notify("info", Utils.translate("vehicle_tank_full"))
                             break
                         end
                         -- Decrease the purchased fuel amount and increase the vehicle fuel level
-                        remainingFuelToRefuel = remainingFuelToRefuel - fuelToAdd
-                        currentFuel = currentFuel + fuelToAdd
+                        remainingFuelToRefuel = remainingFuelToRefuel - litersDeductedEachTick
+                        currentFuel = currentFuel + percentageOfFuelToAdd
                         SetFuel(vehicleToRefuel, currentFuel)
                         SendNUIMessage({
                             showRefuelDisplay = true,
                             remainingFuelAmount = remainingFuelToRefuel,
-                            currentVehicleTank = currentFuel,
+                            currentVehicleTankSize = vehicleTankSize,
+                            currentDisplayFuelAmount = getVehicleDisplayFuelAmount(currentFuel, vehicleTankSize),
                             isElectric = isElectric,
                             fuelTypePurchased = fuelTypePurchased
                         })
                         if Config.Debug then print("executeRefuelAction:remainingFuelToRefuel", remainingFuelToRefuel) end
+
+                        -- Update the jerry can ammo every tick
+                        if isFromJerryCan then
+                            updateWeaponAmmo(remainingFuelToRefuel - (litersDeductedEachTick * 3)) -- "-litersDeductedEachTick" to deduct the next 3 ticks and avoid user suddently holstering the gas can
+                        end
+
                         Wait(refuelTick)
                     end
                     if isFromJerryCan then
-                        -- Update the jerry can ammo
-                        SetPedAmmo(ped, JERRY_CAN_HASH, remainingFuelToRefuel)
-                        updateWeaponAmmo(remainingFuelToRefuel)
+                        -- Clear the vehicle attached to the can
                         vehicleAttachedToNozzle = nil
+                        updateWeaponAmmo(remainingFuelToRefuel) -- Set the ammo again if the user is still holstering it
                     end
                     if isElectric then
-                        exports['lc_utils']:notify("success", Utils.translate("vehicle_recharged"):format(Utils.Math.round(currentFuel - startingFuel, 1)))
+                        exports['lc_utils']:notify("success", Utils.translate("vehicle_recharged"):format(Utils.Math.round(getVehicleDisplayFuelAmount(currentFuel, vehicleTankSize) - getVehicleDisplayFuelAmount(startingFuel, vehicleTankSize), 1)))
                     else
-                        exports['lc_utils']:notify("success", Utils.translate("vehicle_refueled"):format(Utils.Math.round(currentFuel - startingFuel, 1)))
+                        exports['lc_utils']:notify("success", Utils.translate("vehicle_refueled"):format(Utils.Math.round(getVehicleDisplayFuelAmount(currentFuel, vehicleTankSize) - getVehicleDisplayFuelAmount(startingFuel, vehicleTankSize), 1)))
                     end
 
                     -- Stop refuelling
@@ -229,6 +245,12 @@ function executeRefuelAction(isFromJerryCan, closestVehicle, closestCapPos, clos
     end
 end
 
+function calculateFuelToAddPercentage(totalVolumeLiters)
+    local percentage = (litersDeductedEachTick / totalVolumeLiters) * 100
+    return percentage
+end
+
+
 -----------------------------------------------------------------------------------------------------------------------------------------
 -- Markers
 -----------------------------------------------------------------------------------------------------------------------------------------
@@ -251,10 +273,10 @@ function refuelLoop(isFromJerryCan)
     while DoesEntityExist(fuelNozzle) or (isFromJerryCan and GetSelectedPedWeapon(ped) == JERRY_CAN_HASH) do
         local waitTime = 200
         if closestCapPos then
-            distanceToCap = #(GetEntityCoords(ped) - vector3(closestCapPos.x,closestCapPos.y,closestCapPos.z + customVehicleParameters.nozzleOffset.up + 0.0))
+            distanceToCap = #(GetEntityCoords(ped) - vector3(closestCapPos.x,closestCapPos.y,closestCapPos.z))
             if distanceToCap < customVehicleParameters.distance + 0.0 and (not vehicleAttachedToNozzle or (vehicleAttachedToNozzle and DoesEntityExist(vehicleAttachedToNozzle) and vehicleAttachedToNozzle == closestVehicle)) then
                 waitTime = 1
-                Utils.Markers.drawText3D(closestCapPos.x,closestCapPos.y,closestCapPos.z + customVehicleParameters.nozzleOffset.up + 0.0, cachedTranslations.interact_with_vehicle)
+                Utils.Markers.drawText3D(closestCapPos.x,closestCapPos.y,closestCapPos.z, cachedTranslations.interact_with_vehicle)
                 if IsControlJustPressed(0, 38) and not inCooldown then
                     -- See which one the player is nearer. The fuel cap or fuel pump
                     if distanceToPump >= distanceToCap then
@@ -358,7 +380,27 @@ function getClosestVehicleVariables()
     if not closestCapPos then
         print("Cap not found for vehicle")
     end
-    return closestVehicle, closestCapPos, closestVehicleHash, customVehicleParameters
+
+    local finalWorldPos = getWorldPosFromOffset(closestVehicle, customVehicleParameters.nozzleOffset)
+
+    return closestVehicle, finalWorldPos, closestVehicleHash, customVehicleParameters
+end
+
+function getWorldPosFromOffset(vehicle, offset)
+    local closestCapPos = GetVehicleCapPos(vehicle)
+    local forwardVector, rightVector, upVector, _ = GetEntityMatrix(vehicle)
+
+    -- Adjust the offsets
+    local forwardOffset = forwardVector * offset.forward
+    local rightoffset = rightVector * offset.right
+    local upOffset = upVector * offset.up
+
+    -- Final world position of the nozzle point
+    return vector3(
+        closestCapPos.x + forwardOffset.x + rightoffset.x + upOffset.x,
+        closestCapPos.y + forwardOffset.y + rightoffset.y + upOffset.y,
+        closestCapPos.z + forwardOffset.z + rightoffset.z + upOffset.z
+    )
 end
 
 function terminateRefuelThread()
@@ -384,6 +426,7 @@ function stopRefuelAction()
 end
 
 function attachNozzleToVehicle(closestVehicle, customVehicleParameters)
+    requestNozzleOwnership()
     DetachEntity(fuelNozzle, true, true)
 
     -- Find the appropriate bone for the fuel cap
@@ -424,6 +467,7 @@ function attachNozzleToVehicle(closestVehicle, customVehicleParameters)
 end
 
 function attachNozzleToPed()
+    requestNozzleOwnership()
     DetachEntity(fuelNozzle, true, true)
 
     local ped = PlayerPedId()

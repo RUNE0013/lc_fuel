@@ -20,8 +20,10 @@ Lang['de'] = {
     ['not_enough_stock'] = "Diese Tankstelle verfügt nicht über genügend Lagerbestände, um diese Aktion durchzuführen",
     ['refuel_paid'] = "$%s bezahlt zum Tanken",
     ['returned_fuel'] = "Du hast %sL Kraftstoff zurückgegeben und $%s zurückerhalten",
+    ['returned_charge'] = "Du hast %skWh Ladung zurückgegeben und $%s zurückerhalten",
     ['jerry_can_paid'] = "$%s bezahlt für den Kanister",
     ['too_far_away'] = "Sie sind zu weit von der Zapfseule entfernt",
+    ['turn_off_engine'] = "Schalten Sie den Motor aus, bevor Sie tanken",
     ['vehicle_refueled'] = "Sie haben %sL ins Fahrzeug getankt",
     ['vehicle_recharged'] = "Sie haben %skWh im Fahrzeug aufgeladen",
     ['vehicle_tank_full'] = "Auto ist voll getankt",
@@ -34,5 +36,15 @@ Lang['de'] = {
         ['balance_jerry_can'] = "Benzinkanister verkauft (%s Liter)",
         ['balance_fuel'] = "Treibstoff verkauft (%s Liter)",
         ['balance_electric'] = "Elektrische Ladung verkauft (%s kWh)",
-    }
+        ['refund_fuel'] = "Kraftstoff erstattet (%s Liter)",
+        ['refund_electric'] = "Stromladung erstattet (%s kWh)",
+    },
+    ['fuel_types'] = {
+        ['type_title'] = "Kraftstoffart: %s",
+        ['electric'] = "Elektrisch",
+        ['regular'] = "Regulär",
+        ['plus'] = "Plus",
+        ['premium'] = "Premium",
+        ['diesel'] = "Diesel",
+    },
 }
